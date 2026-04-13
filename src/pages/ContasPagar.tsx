@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -37,9 +37,39 @@ const statusConfig = {
 const ContasPagar = () => {
   const [contas, setContas] = useState(initialContas);
   const [open, setOpen] = useState(false);
+  const [filtroStatus, setFiltroStatus] = useState<string>("todos");
+  const [filtroDataInicio, setFiltroDataInicio] = useState("");
+  const [filtroDataFim, setFiltroDataFim] = useState("");
 
-  const totalPagar = contas.filter((c) => c.status !== "pago").length;
-  const totalAtrasado = contas.filter((c) => c.status === "atrasado").length;
+  const parseDate = (dateStr: string) => {
+    const [d, m, y] = dateStr.split("/");
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  };
+
+  const contasFiltradas = useMemo(() => {
+    return contas.filter((c) => {
+      if (filtroStatus !== "todos" && c.status !== filtroStatus) return false;
+      if (filtroDataInicio || filtroDataFim) {
+        const venc = parseDate(c.vencimento);
+        if (filtroDataInicio) {
+          const inicio = new Date(filtroDataInicio);
+          if (venc < inicio) return false;
+        }
+        if (filtroDataFim) {
+          const fim = new Date(filtroDataFim);
+          if (venc > fim) return false;
+        }
+      }
+      return true;
+    });
+  }, [contas, filtroStatus, filtroDataInicio, filtroDataFim]);
+
+  const totalPagar = contasFiltradas.filter((c) => c.status !== "pago").length;
+  const totalAtrasado = contasFiltradas.filter((c) => c.status === "atrasado").length;
+
+  const handleStatusChange = (id: number, newStatus: Conta["status"]) => {
+    setContas(contas.map((c) => (c.id === id ? { ...c, status: newStatus } : c)));
+  };
 
   const handleAdd = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -53,6 +83,12 @@ const ContasPagar = () => {
     };
     setContas([...contas, nova]);
     setOpen(false);
+  };
+
+  const limparFiltros = () => {
+    setFiltroStatus("todos");
+    setFiltroDataInicio("");
+    setFiltroDataFim("");
   };
 
   return (
@@ -115,7 +151,7 @@ const ContasPagar = () => {
               <CardTitle className="text-sm font-medium text-muted-foreground">Total de Contas</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-heading font-bold">{contas.length}</div>
+              <div className="text-2xl font-heading font-bold">{contasFiltradas.length}</div>
             </CardContent>
           </Card>
           <Card>
@@ -136,6 +172,52 @@ const ContasPagar = () => {
           </Card>
         </div>
 
+        {/* Filtros */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">Filtros</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Status</Label>
+                <Select value={filtroStatus} onValueChange={setFiltroStatus}>
+                  <SelectTrigger className="w-[160px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="todos">Todos</SelectItem>
+                    <SelectItem value="pendente">Pendente</SelectItem>
+                    <SelectItem value="pago">Pago</SelectItem>
+                    <SelectItem value="atrasado">Atrasado</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Vencimento de</Label>
+                <Input
+                  type="date"
+                  className="w-[160px]"
+                  value={filtroDataInicio}
+                  onChange={(e) => setFiltroDataInicio(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Vencimento até</Label>
+                <Input
+                  type="date"
+                  className="w-[160px]"
+                  value={filtroDataFim}
+                  onChange={(e) => setFiltroDataFim(e.target.value)}
+                />
+              </div>
+              <Button variant="outline" size="sm" onClick={limparFiltros}>
+                Limpar
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -148,7 +230,7 @@ const ContasPagar = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {contas.map((conta) => {
+                {contasFiltradas.map((conta) => {
                   const cfg = statusConfig[conta.status];
                   return (
                     <TableRow key={conta.id}>
@@ -156,13 +238,32 @@ const ContasPagar = () => {
                       <TableCell>{conta.valor}</TableCell>
                       <TableCell>{conta.vencimento}</TableCell>
                       <TableCell>
-                        <Badge variant={cfg.variant} className={cfg.className}>
-                          {cfg.label}
-                        </Badge>
+                        <Select
+                          value={conta.status}
+                          onValueChange={(val) => handleStatusChange(conta.id, val as Conta["status"])}
+                        >
+                          <SelectTrigger className="w-[130px] h-7 border-none p-0 focus:ring-0 focus:ring-offset-0">
+                            <Badge variant={cfg.variant} className={cfg.className}>
+                              {cfg.label}
+                            </Badge>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pendente">Pendente</SelectItem>
+                            <SelectItem value="pago">Pago</SelectItem>
+                            <SelectItem value="atrasado">Atrasado</SelectItem>
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                     </TableRow>
                   );
                 })}
+                {contasFiltradas.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
+                      Nenhuma conta encontrada com os filtros selecionados.
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </CardContent>
